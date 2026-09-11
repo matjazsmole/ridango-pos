@@ -155,7 +155,7 @@ input { font: inherit; }
 /* ---------- Sell screen ---------- */
 .sell { display: grid; grid-template-rows: var(--tabs-h) 1fr; min-height: 0; }
 .catalog { position: relative; display: flex; flex-direction: column; min-height: 0; }
-.catalog__pages { flex: 1 1 auto; min-height: 0; padding: 28px 24px 0; }
+.catalog__pages { flex: none; padding: 28px 24px 0; }
 .cards {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -194,7 +194,7 @@ input { font: inherit; }
 .chip[data-profile="family"] { background: var(--chip-family); }
 .chip[data-profile="child"] { background: var(--chip-child); }
 
-.pager { height: 24px; display: flex; align-items: center; justify-content: center; gap: 6px; }
+.pager { flex: 1 1 auto; min-height: 24px; display: flex; align-items: center; justify-content: center; gap: 6px; }
 .pager__dot { width: 10px; height: 10px; border-radius: 50%; background: var(--gray-20); padding: 0; }
 .pager__dot[aria-current="true"] { background: var(--brand-secondary); }
 .pager:empty { visibility: hidden; }
