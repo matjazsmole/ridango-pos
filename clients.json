@@ -1,0 +1,26 @@
+{
+  "clients": [
+    {
+      "id": "vastmanland-test",
+      "name": "Västmanland",
+      "environment": "test",
+      "logo": "assets/logos/vastmanland.svg",
+      "logoHeight": 40,
+      "dataFile": "data/vastmanland-test/vastmanland-v5-fullset.json",
+      "distributionChannel": "DistributionChannel@5",
+      "locale": "sv-SE",
+      "language": "sv"
+    },
+    {
+      "id": "sormland-test",
+      "name": "Sörmland",
+      "environment": "test",
+      "logo": "assets/logos/sormland.svg",
+      "logoHeight": 42,
+      "dataFile": null,
+      "distributionChannel": null,
+      "locale": "sv-SE",
+      "language": "sv"
+    }
+  ]
+}
