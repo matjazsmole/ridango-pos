@@ -405,7 +405,8 @@ document.addEventListener('pointerup', (e) => {
 
 // Page size follows the available height: 3 columns × as many 160px rows as fit.
 function updatePageSize() {
-  const h = window.innerHeight - 80 - 72 - 50 - 28 - 24; // header, tabs, footer, top padding, pager
+  const px = (sel, fallback) => document.querySelector(sel)?.offsetHeight || fallback;
+  const h = window.innerHeight - px('.header', 80) - px('.tabs', 72) - px('.footer', 50) - 28 - 24; // top padding + pager
   const cols = window.innerWidth <= 520 ? 1 : window.innerWidth <= 760 ? 2 : 3;
   const rows = Math.max(1, Math.floor((h + 17) / 177));
   const size = cols * rows;
