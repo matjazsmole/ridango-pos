@@ -1,5 +1,5 @@
 /* Service worker: precaches the app shell, caches fare data and fonts on first use. */
-const VERSION = 'ridango-pos-v1';
+const VERSION = 'ridango-pos-v2';
 const SHELL = [
   './',
   './index.html',
@@ -61,19 +61,16 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // App shell: cache first, refresh in the background.
+  // App shell: network first so deployments show up on the next load; cache keeps it working offline.
   event.respondWith(
-    caches.match(request).then((cached) => {
-      const refresh = fetch(request)
-        .then((response) => {
-          if (response.ok && url.origin === self.location.origin) {
-            const copy = response.clone();
-            caches.open(VERSION).then((cache) => cache.put(request, copy));
-          }
-          return response;
-        })
-        .catch(() => cached);
-      return cached || refresh;
-    })
+    fetch(request)
+      .then((response) => {
+        if (response.ok && url.origin === self.location.origin) {
+          const copy = response.clone();
+          caches.open(VERSION).then((cache) => cache.put(request, copy));
+        }
+        return response;
+      })
+      .catch(() => caches.match(request).then((cached) => cached || caches.match('./index.html')))
   );
 });
