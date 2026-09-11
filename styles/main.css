@@ -158,7 +158,20 @@ input { font: inherit; }
 /* ---------- Sell screen ---------- */
 .sell { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: var(--tabs-h) 1fr; min-height: 0; min-width: 0; }
 .catalog { position: relative; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
-.catalog__pages { flex: none; padding: 28px 24px 0; }
+.catalog__pages { flex: none; padding: 28px 24px 0; overflow: hidden; }
+.track {
+  display: flex; align-items: flex-start;
+  width: 100%;
+  touch-action: pan-y;
+  will-change: transform;
+  cursor: grab;
+}
+.track:active { cursor: grabbing; }
+.track > .cards { flex: 0 0 100%; min-width: 0; }
+.track img, .track .card { -webkit-user-drag: none; }
+.pager__dot { transition: background-color 200ms ease, transform 200ms ease; }
+.pager__dot[aria-current="true"] { transform: scale(1.2); }
+@media (prefers-reduced-motion: reduce) { .track { transition: none !important; } .pager__dot { transition: none; } }
 .cards {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

@@ -165,17 +165,18 @@ function renderSell() {
     const offers = state.catalog.offersInZone(state.zone).filter((o) => o.typeCode === state.tab);
     const pages = Math.max(1, Math.ceil(offers.length / state.pageSize));
     state.page = Math.min(state.page, pages - 1);
-    const visible = offers.slice(state.page * state.pageSize, (state.page + 1) * state.pageSize);
+    const pageHtml = Array.from({ length: pages }, (_, i) => {
+      const slice = offers.slice(i * state.pageSize, (i + 1) * state.pageSize);
+      return `<div class="cards" aria-hidden="${i !== state.page}">${slice.length ? slice.map(renderCard).join('') : '<p class="empty t-display-s">No products for this zone.</p>'}</div>`;
+    }).join('');
     body = `
       <div class="sell">
         <nav class="tabs" role="tablist">
           ${tabs.map((t) => `<button class="tab t-heading" role="tab" data-action="tab" data-tab="${esc(t.code)}" aria-selected="${t.code === state.tab}">${esc(t.name)}</button>`).join('')}
         </nav>
-        <section class="catalog" data-swipe>
+        <section class="catalog">
           <div class="catalog__pages">
-            <div class="cards">
-              ${visible.length ? visible.map(renderCard).join('') : '<p class="empty t-display-s">No products for this zone.</p>'}
-            </div>
+            <div class="track" data-swipe style="transform:translate3d(${-state.page * 100}%,0,0)">${pageHtml}</div>
           </div>
           <div class="pager" role="tablist" aria-label="Pages">
             ${pages > 1 ? Array.from({ length: pages }, (_, i) => `<button class="pager__dot" data-action="page" data-page="${i}" aria-current="${i === state.page}" aria-label="Page ${i + 1}"></button>`).join('') : ''}
@@ -330,7 +331,7 @@ const actions = {
     if (client) selectClient(client);
   },
   tab(el) { setTab(el.dataset.tab); render(); },
-  page(el) { state.page = Number(el.dataset.page); render(); },
+  page(el) { goToPage(Number(el.dataset.page)); },
   pick(el) {
     const offer = state.catalog.offersInZone(state.zone).find((o) => o.id === el.dataset.offer);
     if (!offer) return;
@@ -387,21 +388,68 @@ document.addEventListener('click', (event) => {
 
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && state.modal && state.modal !== 'success') actions.close();
+  if (state.screen === 'sell' && !state.modal && (event.key === 'ArrowRight' || event.key === 'ArrowLeft')) goToPage(state.page + (event.key === 'ArrowRight' ? 1 : -1));
 });
 
-// Swipe between catalogue pages.
-let swipeStart = null;
-document.addEventListener('pointerdown', (e) => { if (e.target.closest('[data-swipe]')) swipeStart = { x: e.clientX, y: e.clientY }; });
-document.addEventListener('pointerup', (e) => {
-  if (!swipeStart) return;
-  const dx = e.clientX - swipeStart.x;
-  const dy = e.clientY - swipeStart.y;
-  swipeStart = null;
-  if (Math.abs(dx) < 60 || Math.abs(dy) > Math.abs(dx)) return;
-  const pages = document.querySelectorAll('.pager__dot').length;
-  const next = state.page + (dx < 0 ? 1 : -1);
-  if (next >= 0 && next < pages) { state.page = next; render(); }
+// Sliding pages: the track follows the finger, rubber-bands at the ends and eases into place.
+const EASE = 'transform 360ms cubic-bezier(0.22, 0.61, 0.36, 1)';
+function pageCount() { return document.querySelectorAll('.track > .cards').length; }
+function goToPage(page, { animate = true } = {}) {
+  const track = document.querySelector('.track');
+  if (!track) return;
+  const pages = pageCount();
+  page = Math.max(0, Math.min(pages - 1, page));
+  state.page = page;
+  track.style.transition = animate ? EASE : 'none';
+  track.style.transform = `translate3d(${-page * 100}%, 0, 0)`;
+  track.querySelectorAll(':scope > .cards').forEach((el, i) => el.setAttribute('aria-hidden', String(i !== page)));
+  document.querySelectorAll('.pager__dot').forEach((dot, i) => dot.setAttribute('aria-current', String(i === page)));
+}
+
+const drag = { active: false, moved: false, id: null, startX: 0, startY: 0, dx: 0, lastX: 0, lastT: 0, velocity: 0, width: 1 };
+document.addEventListener('pointerdown', (e) => {
+  const track = e.target.closest('[data-swipe]');
+  if (!track || e.button !== 0) return;
+  Object.assign(drag, { active: true, moved: false, id: e.pointerId, startX: e.clientX, startY: e.clientY, dx: 0, lastX: e.clientX, lastT: e.timeStamp, velocity: 0, width: track.clientWidth || 1 });
 });
+document.addEventListener('pointermove', (e) => {
+  if (!drag.active || e.pointerId !== drag.id) return;
+  const track = document.querySelector('.track');
+  if (!track) return;
+  const dx = e.clientX - drag.startX;
+  const dy = e.clientY - drag.startY;
+  if (!drag.moved) {
+    if (Math.abs(dx) < 8 || Math.abs(dy) > Math.abs(dx)) { if (Math.abs(dy) >= 8) drag.active = false; return; }
+    drag.moved = true;
+    track.setPointerCapture?.(e.pointerId);
+    track.style.transition = 'none';
+  }
+  const pages = pageCount();
+  let offset = dx;
+  const atEdge = (state.page === 0 && dx > 0) || (state.page === pages - 1 && dx < 0);
+  if (atEdge) offset = dx * 0.3; // rubber band
+  drag.dx = offset;
+  const dt = Math.max(1, e.timeStamp - drag.lastT);
+  drag.velocity = (e.clientX - drag.lastX) / dt; // px per ms
+  drag.lastX = e.clientX; drag.lastT = e.timeStamp;
+  track.style.transform = `translate3d(calc(${-state.page * 100}% + ${offset}px), 0, 0)`;
+});
+function endDrag(e) {
+  if (!drag.active || e.pointerId !== drag.id) return;
+  drag.active = false;
+  if (!drag.moved) return;
+  const flick = Math.abs(drag.velocity) > 0.4;
+  const far = Math.abs(drag.dx) > drag.width / 4;
+  let next = state.page;
+  if (flick) next += drag.velocity < 0 ? 1 : -1;
+  else if (far) next += drag.dx < 0 ? 1 : -1;
+  goToPage(next);
+  suppressClickUntil = performance.now() + 400;
+}
+document.addEventListener('pointerup', endDrag);
+document.addEventListener('pointercancel', endDrag);
+let suppressClickUntil = 0;
+document.addEventListener('click', (e) => { if (performance.now() < suppressClickUntil) { e.stopPropagation(); e.preventDefault(); } }, true);
 
 // Page size follows the available height: 3 columns × as many 160px rows as fit.
 function updatePageSize() {
