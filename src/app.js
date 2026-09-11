@@ -451,6 +451,40 @@ document.addEventListener('pointercancel', endDrag);
 let suppressClickUntil = 0;
 document.addEventListener('click', (e) => { if (performance.now() < suppressClickUntil) { e.stopPropagation(); e.preventDefault(); } }, true);
 
+// Trackpad two-finger swipe (horizontal wheel events): follow the gesture, flip once past the threshold.
+const wheel = { acc: 0, timer: null, flipped: false };
+const WHEEL_THRESHOLD = 90; // px of horizontal scroll needed to change page
+function endWheelGesture() {
+  wheel.timer = null;
+  if (!wheel.flipped) goToPage(state.page); // snap back
+  wheel.acc = 0;
+  wheel.flipped = false;
+}
+document.addEventListener('wheel', (e) => {
+  const track = e.target.closest('[data-swipe]');
+  if (!track || Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+  e.preventDefault();
+  clearTimeout(wheel.timer);
+  wheel.timer = setTimeout(endWheelGesture, 120);
+  if (wheel.flipped || drag.active) return; // one page per gesture
+  wheel.acc += e.deltaX;
+  const pages = pageCount();
+  const dir = wheel.acc > 0 ? 1 : -1;
+  const next = state.page + dir;
+  if (next < 0 || next >= pages) {
+    track.style.transition = 'none';
+    track.style.transform = `translate3d(calc(${-state.page * 100}% + ${-wheel.acc * 0.3}px), 0, 0)`; // rubber band
+    return;
+  }
+  if (Math.abs(wheel.acc) >= WHEEL_THRESHOLD) {
+    wheel.flipped = true;
+    goToPage(next);
+    return;
+  }
+  track.style.transition = 'none';
+  track.style.transform = `translate3d(calc(${-state.page * 100}% + ${-wheel.acc}px), 0, 0)`;
+}, { passive: false });
+
 // Page size follows the available height: 3 columns × as many 160px rows as fit.
 function updatePageSize() {
   const px = (sel, fallback) => document.querySelector(sel)?.offsetHeight || fallback;
