@@ -59,7 +59,12 @@ data/<client-env>/      fare data per client-environment
 assigned to every channel of type `TypeOfDistributionChannel@pos`. Assignments made to a
 distribution-channel group that contains the channel are included as well.
 
-The user taps the logo in the header to switch client.
+The user taps the logo in the header to open Settings: client-environment, the device the UI is
+optimised for (SUNMI D3 Mini 10.1″ 1280 × 800, iPad Pro 11″ or 12.9″ 2018, or fit to window) and
+the card layout (2 × 3 default, 2 × 2, 2 × 4). Device profiles live in `DEVICES` in `src/app.js`;
+the UI is zoomed by the device's CSS-pixels-per-inch so controls keep the same physical size, and
+on a larger window the app is shown in a frame of the device's viewport. Choices persist in
+`localStorage`.
 
 ## How the catalogue is derived
 

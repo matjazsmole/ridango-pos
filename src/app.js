@@ -1,16 +1,37 @@
 /**
  * Ridango POS 2.0 — application shell.
  * Screens: sell (catalogue) → add ticket → shopping cart → success.
- * Modals: select zone, select client, header menu.
+ * Modals: settings (client, device, card layout), select zone, select client, header menu.
  */
 import { buildCatalog } from './fare-model.js';
 import { formatPrice, formatClock } from './format.js';
 
 const STORAGE = {
   client: 'ridango-pos.client',
+  device: 'ridango-pos.device',
+  layout: 'ridango-pos.layout',
   zone: (clientId) => `ridango-pos.zone.${clientId}`,
   tab: (clientId) => `ridango-pos.tab.${clientId}`,
 };
+
+// Devices the UI can be optimised for. width/height are the landscape viewport in CSS px,
+// cssPpi the CSS pixels per physical inch (native ppi ÷ device pixel ratio). The UI is zoomed
+// by cssPpi / REF_PPI so controls have the same physical size on every device; on a larger
+// window the app is shown inside a frame of the device's size.
+const REF_PPI = 132; // iPad Pro 11″ (264 ppi @2x) is the 1:1 reference
+const DEVICES = [
+  { id: 'auto', name: 'Fit to window', meta: 'no optimisation', width: null, height: null, cssPpi: REF_PPI },
+  { id: 'sunmi-d3-mini', name: 'SUNMI D3 Mini', meta: '10.1″ · 1280 × 800', width: 1280, height: 800, cssPpi: 149 },
+  { id: 'ipad-pro-11', name: 'iPad Pro 11″ (2018)', meta: '11″ · 1194 × 834', width: 1194, height: 834, cssPpi: 132 },
+  { id: 'ipad-pro-12-9', name: 'iPad Pro 12.9″ (2018)', meta: '12.9″ · 1366 × 1024', width: 1366, height: 1024, cssPpi: 132 },
+];
+const LAYOUTS = [
+  { id: '2x3', name: '2 rows × 3 cards', rows: 2, cols: 3 },
+  { id: '2x2', name: '2 rows × 2 cards', rows: 2, cols: 2 },
+  { id: '2x4', name: '2 rows × 4 cards', rows: 2, cols: 4 },
+];
+const deviceOf = (id) => DEVICES.find((d) => d.id === id) || DEVICES[0];
+const layoutOf = (id) => LAYOUTS.find((l) => l.id === id) || LAYOUTS[0];
 
 const state = {
   clients: [],
@@ -26,9 +47,13 @@ const state = {
   cart: [],            // [{ offer, zoneCode, zoneName, quantity, price }]
   separateTickets: true,
   printReceipt: false,
-  modal: null,         // 'zone' | 'client' | 'menu' | 'success'
+  modal: null,         // 'settings' | 'zone' | 'client' | 'device' | 'layout' | 'menu' | 'success'
+  modalReturn: null,   // modal to reopen after a pick (settings sub-lists)
+  device: 'auto',      // DEVICES id
+  layout: '2x3',       // LAYOUTS id
 };
 
+const deviceEl = document.getElementById('device');
 const app = document.getElementById('app');
 const modals = document.getElementById('modals');
 
@@ -121,7 +146,7 @@ function renderHeader({ title, showZone = true, showActions = true, extra = '' }
   const count = cartCount();
   return `
     <header class="header">
-      <button class="header__logo" data-action="client" aria-label="Change client" style="--logo-h:${Number(c?.logoHeight) || 40}px">
+      <button class="header__logo" data-action="settings" aria-label="Settings" aria-haspopup="dialog" style="--logo-h:${Number(c?.logoHeight) || 40}px">
         ${c ? `<img src="${esc(c.logo)}" alt="${esc(c.name)}">` : ''}
       </button>
       <span class="header__sep" aria-hidden="true"></span>
@@ -297,15 +322,29 @@ function renderModal() {
       </div>`;
     return;
   }
-  const isZone = state.modal === 'zone';
-  const rows = isZone
-    ? state.catalog.zones.map((z) => `<button class="row-btn t-display-s" role="option" data-action="set-zone" data-zone="${esc(z.code)}" aria-selected="${z.code === state.zone}"><span class="row-btn__text">${esc(z.name)}</span></button>`)
-    : state.clients.map((c) => `<button class="row-btn t-display-s" role="option" data-action="set-client" data-client="${esc(c.id)}" aria-selected="${c.id === state.client?.id}"><span class="row-btn__text">${esc(c.name)}</span><span class="row-btn__meta">${esc(c.environment)}</span></button>`);
+  const option = (action, key, value, text, meta, selected) =>
+    `<button class="row-btn t-display-s" role="option" data-action="${action}" data-${key}="${esc(value)}" aria-selected="${selected}"><span class="row-btn__text">${esc(text)}</span>${meta ? `<span class="row-btn__meta">${esc(meta)}</span>` : ''}</button>`;
+  const c = state.client;
+  const lists = {
+    settings: {
+      title: 'Settings',
+      rows: [
+        option('client', 'open', '', 'Client', c ? `${c.name} · ${c.environment}` : '—', false),
+        option('device', 'open', '', 'Device', deviceOf(state.device).name, false),
+        option('layout', 'open', '', 'Card layout', layoutOf(state.layout).name, false),
+      ],
+    },
+    zone: { title: 'Select zone', rows: (state.catalog?.zones || []).map((z) => option('set-zone', 'zone', z.code, z.name, '', z.code === state.zone)) },
+    client: { title: 'Select client', rows: state.clients.map((x) => option('set-client', 'client', x.id, x.name, x.environment, x.id === c?.id)) },
+    device: { title: 'Select device', rows: DEVICES.map((d) => option('set-device', 'device', d.id, d.name, d.meta, d.id === state.device)) },
+    layout: { title: 'Card layout', rows: LAYOUTS.map((l) => option('set-layout', 'layout', l.id, l.name, '', l.id === state.layout)) },
+  };
+  const { title, rows } = lists[state.modal] || lists.settings;
   modals.innerHTML = `
     <div class="overlay" data-action="close">
-      <div class="modal" role="dialog" aria-modal="true" aria-label="${isZone ? 'Select zone' : 'Select client'}">
+      <div class="modal" role="dialog" aria-modal="true" aria-label="${esc(title)}">
         <div class="modal__header">
-          <h2 class="modal__title t-display-s">${isZone ? 'Select zone' : 'Select client'}</h2>
+          <h2 class="modal__title t-display-s">${esc(title)}</h2>
           <button class="modal__close" data-action="close" aria-label="Close"><img src="${icon('x')}" alt=""></button>
         </div>
         <div class="modal__list" role="listbox">${rows.join('')}</div>
@@ -318,17 +357,47 @@ function renderModal() {
 // ---------------------------------------------------------------------------
 // Actions
 // ---------------------------------------------------------------------------
+// Opens a list modal; lists opened from Settings return there after a pick.
+function openModal(name) {
+  state.modalReturn = state.modal === 'settings' ? 'settings' : null;
+  state.modal = name;
+  renderModal();
+}
+function afterPick() {
+  state.modal = state.modalReturn;
+  state.modalReturn = null;
+}
+
 const actions = {
-  client() { state.modal = 'client'; renderModal(); },
-  zone() { if (state.catalog) { state.modal = 'zone'; renderModal(); } },
+  settings() { state.modal = 'settings'; state.modalReturn = null; renderModal(); },
+  client() { openModal('client'); },
+  device() { openModal('device'); },
+  layout() { openModal('layout'); },
+  zone() { if (state.catalog) openModal('zone'); },
   menu() { state.modal = state.modal === 'menu' ? null : 'menu'; renderModal(); },
-  close() { state.modal = null; renderModal(); },
+  close() { state.modal = null; state.modalReturn = null; renderModal(); },
   reload() { state.modal = null; selectClient(state.client); },
-  'set-zone'(el) { setZone(el.dataset.zone); state.modal = null; render(); },
+  'set-zone'(el) { setZone(el.dataset.zone); afterPick(); render(); },
   'set-client'(el) {
     const client = state.clients.find((c) => c.id === el.dataset.client);
-    state.modal = null;
+    afterPick();
     if (client) selectClient(client);
+  },
+  'set-device'(el) {
+    state.device = deviceOf(el.dataset.device).id;
+    write(STORAGE.device, state.device);
+    afterPick();
+    applyDevice();
+    updatePageSize();
+    render();
+  },
+  'set-layout'(el) {
+    state.layout = layoutOf(el.dataset.layout).id;
+    write(STORAGE.layout, state.layout);
+    afterPick();
+    state.page = 0;
+    updatePageSize();
+    render();
   },
   tab(el) { setTab(el.dataset.tab); render(); },
   page(el) { goToPage(Number(el.dataset.page)); },
@@ -485,16 +554,32 @@ document.addEventListener('wheel', (e) => {
   track.style.transform = `translate3d(calc(${-state.page * 100}% + ${-wheel.acc}px), 0, 0)`;
 }, { passive: false });
 
-// Page size follows the available height: 3 columns × as many 160px rows as fit.
+// Device frame: zoom the UI so controls keep their physical size, and on a window larger than
+// the device show the app inside a frame of the device's viewport size.
+function applyDevice() {
+  const dev = deviceOf(state.device);
+  const zoom = dev.width ? dev.cssPpi / REF_PPI : 1;
+  const w = dev.width ? Math.min(window.innerWidth, dev.width) : window.innerWidth;
+  const h = dev.height ? Math.min(window.innerHeight, dev.height) : window.innerHeight;
+  deviceEl.style.setProperty('--ui-scale', String(zoom));
+  deviceEl.style.width = `${w / zoom}px`;
+  deviceEl.style.height = `${h / zoom}px`;
+  document.body.toggleAttribute('data-device-frame', w < window.innerWidth || h < window.innerHeight);
+  document.documentElement.dataset.device = dev.id;
+}
+
+// Page size: the chosen card layout (rows × columns), reduced on narrow or short screens.
 function updatePageSize() {
+  const layout = layoutOf(state.layout);
   const px = (sel, fallback) => document.querySelector(sel)?.offsetHeight || fallback;
-  const h = window.innerHeight - px('.header', 80) - px('.tabs', 72) - px('.footer', 50) - 28 - 24; // top padding + pager
-  const cols = window.innerWidth <= 520 ? 1 : window.innerWidth <= 760 ? 2 : 3;
-  const rows = Math.max(1, Math.floor((h + 17) / 177));
+  const h = app.clientHeight - px('.header', 80) - px('.tabs', 72) - px('.footer', 50) - 28 - 24; // top padding + pager
+  const cols = matchMedia('(max-width: 520px)').matches ? 1 : matchMedia('(max-width: 760px)').matches ? 2 : layout.cols;
+  const rows = Math.max(1, Math.min(layout.rows, Math.floor((h + 17) / 177)));
+  document.documentElement.style.setProperty('--card-cols', String(cols));
   const size = cols * rows;
   if (size !== state.pageSize) { state.pageSize = size; state.page = 0; if (state.catalog) render(); }
 }
-window.addEventListener('resize', updatePageSize);
+window.addEventListener('resize', () => { applyDevice(); updatePageSize(); });
 
 function updateClock() {
   const el = document.querySelector('[data-clock]');
@@ -506,6 +591,9 @@ setInterval(updateClock, 15000);
 // Boot
 // ---------------------------------------------------------------------------
 (async function boot() {
+  state.device = deviceOf(read(STORAGE.device)).id;
+  state.layout = layoutOf(read(STORAGE.layout)).id;
+  applyDevice();
   updatePageSize();
   try {
     await loadClients();

@@ -63,6 +63,20 @@ input { font: inherit; }
 .t-heading { font-family: var(--font-text); font-weight: 600; font-size: 16px; line-height: 24px; }
 .t-button { font-family: var(--font-text); font-weight: 500; font-size: 14px; line-height: 16px; }
 
+/* ---------- Device frame ---------- */
+/* Sized and zoomed by applyDevice(); the transform makes it the containing block for the
+   fixed-position app and overlays, so they stay inside the frame. */
+.device {
+  position: relative;
+  width: 100%; height: 100%;
+  overflow: hidden;
+  transform: translateZ(0);
+  zoom: var(--ui-scale, 1);
+  background: var(--gray-3);
+}
+body[data-device-frame] { display: flex; align-items: center; justify-content: center; background: #060d1a; }
+body[data-device-frame] .device { flex: none; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 24px 60px rgba(0, 0, 0, 0.5); }
+
 /* ---------- App frame ---------- */
 .app {
   position: fixed; inset: 0;
@@ -174,7 +188,7 @@ input { font: inherit; }
 @media (prefers-reduced-motion: reduce) { .track { transition: none !important; } .pager__dot { transition: none; } }
 .cards {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--card-cols, 3), minmax(0, 1fr));
   grid-auto-rows: 160px;
   gap: 17px 16px;
 }
