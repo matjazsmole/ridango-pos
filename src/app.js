@@ -10,6 +10,7 @@ const STORAGE = {
   client: 'ridango-pos.client',
   device: 'ridango-pos.device',
   layout: 'ridango-pos.layout',
+  cardView: 'ridango-pos.card-view',
   zone: (clientId) => `ridango-pos.zone.${clientId}`,
   tab: (clientId) => `ridango-pos.tab.${clientId}`,
 };
@@ -30,8 +31,15 @@ const LAYOUTS = [
   { id: '2x2', name: '2 rows × 2 cards', rows: 2, cols: 2 },
   { id: '2x4', name: '2 rows × 4 cards', rows: 2, cols: 4 },
 ];
+// Card view: 'parameters' shows product, zone and user profile as separate parameters;
+// 'derived' shows one derived product name, e.g. "Single ticket - Arboga (ADULT)", and the price.
+const CARD_VIEWS = [
+  { id: 'parameters', name: 'Parameters' },
+  { id: 'derived', name: 'Derived products' },
+];
 const deviceOf = (id) => DEVICES.find((d) => d.id === id) || DEVICES[0];
 const layoutOf = (id) => LAYOUTS.find((l) => l.id === id) || LAYOUTS[0];
+const cardViewOf = (id) => CARD_VIEWS.find((v) => v.id === id) || CARD_VIEWS[0];
 
 const state = {
   clients: [],
@@ -47,10 +55,11 @@ const state = {
   cart: [],            // [{ offer, zoneCode, zoneName, quantity, price }]
   separateTickets: true,
   printReceipt: false,
-  modal: null,         // 'settings' | 'zone' | 'client' | 'device' | 'layout' | 'menu' | 'success'
+  modal: null,         // 'settings' | 'zone' | 'client' | 'device' | 'layout' | 'card-view' | 'menu' | 'success'
   modalReturn: null,   // modal to reopen after a pick (settings sub-lists)
   device: 'auto',      // DEVICES id
   layout: '2x3',       // LAYOUTS id
+  cardView: 'parameters', // CARD_VIEWS id
 };
 
 const deviceEl = document.getElementById('device');
@@ -214,6 +223,14 @@ function renderSell() {
 
 function renderCard(offer) {
   const zoneLabel = offer.coverageName(state.zone);
+  if (state.cardView === 'derived') {
+    const name = `${offer.title} - ${zoneLabel}${offer.profile ? ` (${offer.profile.name.toUpperCase()})` : ''}`;
+    return `
+    <button class="card card--derived" data-action="pick" data-offer="${esc(offer.id)}">
+      <div class="card__name t-display-s">${esc(name)}</div>
+      <div class="card__price t-display-l">${esc(money(offer.price))}</div>
+    </button>`;
+  }
   return `
     <button class="card" data-action="pick" data-offer="${esc(offer.id)}">
       <div class="card__row">
@@ -332,12 +349,14 @@ function renderModal() {
         option('client', 'open', '', 'Client', c ? `${c.name} · ${c.environment}` : '—', false),
         option('device', 'open', '', 'Device', deviceOf(state.device).name, false),
         option('layout', 'open', '', 'Card layout', layoutOf(state.layout).name, false),
+        option('card-view', 'open', '', 'Card view', cardViewOf(state.cardView).name, false),
       ],
     },
     zone: { title: 'Select zone', rows: (state.catalog?.zones || []).map((z) => option('set-zone', 'zone', z.code, z.name, '', z.code === state.zone)) },
     client: { title: 'Select client', rows: state.clients.map((x) => option('set-client', 'client', x.id, x.name, x.environment, x.id === c?.id)) },
     device: { title: 'Select device', rows: DEVICES.map((d) => option('set-device', 'device', d.id, d.name, d.meta, d.id === state.device)) },
     layout: { title: 'Card layout', rows: LAYOUTS.map((l) => option('set-layout', 'layout', l.id, l.name, '', l.id === state.layout)) },
+    'card-view': { title: 'Card view', rows: CARD_VIEWS.map((v) => option('set-card-view', 'view', v.id, v.name, '', v.id === state.cardView)) },
   };
   const { title, rows } = lists[state.modal] || lists.settings;
   modals.innerHTML = `
@@ -373,6 +392,7 @@ const actions = {
   client() { openModal('client'); },
   device() { openModal('device'); },
   layout() { openModal('layout'); },
+  'card-view'() { openModal('card-view'); },
   zone() { if (state.catalog) openModal('zone'); },
   menu() { state.modal = state.modal === 'menu' ? null : 'menu'; renderModal(); },
   close() { state.modal = null; state.modalReturn = null; renderModal(); },
@@ -397,6 +417,12 @@ const actions = {
     afterPick();
     state.page = 0;
     updatePageSize();
+    render();
+  },
+  'set-card-view'(el) {
+    state.cardView = cardViewOf(el.dataset.view).id;
+    write(STORAGE.cardView, state.cardView);
+    afterPick();
     render();
   },
   tab(el) { setTab(el.dataset.tab); render(); },
@@ -593,6 +619,7 @@ setInterval(updateClock, 15000);
 (async function boot() {
   state.device = deviceOf(read(STORAGE.device)).id;
   state.layout = layoutOf(read(STORAGE.layout)).id;
+  state.cardView = cardViewOf(read(STORAGE.cardView)).id;
   applyDevice();
   updatePageSize();
   try {
