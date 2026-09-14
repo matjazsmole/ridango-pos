@@ -180,13 +180,15 @@ body[data-device-frame] .device { flex: none; box-shadow: 0 0 0 1px rgba(255, 25
 .crumbs__back {
   flex: none;
   display: flex; align-items: center; gap: 2px;
-  height: 48px; padding: 0 12px 0 4px; margin-right: 8px;
+  height: 48px; padding: 0 16px 0 8px; margin-right: 8px;
+  background: var(--brand-primary);
+  border: 1px solid rgba(0, 0, 0, 0.05);
   border-radius: var(--radius);
-  color: var(--black);
+  box-shadow: var(--shadow-button);
+  color: var(--white);
 }
-.crumbs__back:active { background: var(--gray-5); }
-.crumbs__back[aria-disabled="true"] { visibility: hidden; }
-.crumb { flex: none; height: 48px; padding: 0 4px; color: var(--gray-60); text-transform: uppercase; }
+.crumbs__back:active { background: var(--accent); }
+.crumb { flex: none; display: inline-flex; align-items: center; height: 48px; padding: 0 4px; color: var(--gray-60); text-transform: uppercase; }
 .crumb[aria-current="page"] { color: var(--black); }
 .crumbs__sep { color: var(--gray-40); }
 .card--group { justify-content: center; gap: 4px; }

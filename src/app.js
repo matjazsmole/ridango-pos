@@ -43,9 +43,9 @@ const CARD_VIEWS = [
 ];
 // Navigation: 'pages' splits the catalogue into swipeable pages of rows × columns cards;
 // 'scroll' shows every product of the tab in one vertically scrolling grid.
-// 'groups' replaces the tabs with breadcrumbs: product types first, then (where a type has more
-// than one group) period passes grouped by validity period and multi-trip tickets by number of
-// trips, then the products.
+// 'groups' keeps the type tabs but shows group cards under a tab (period passes by validity
+// period, multi-trip tickets by number of trips, only where a type has more than one group);
+// opening a group swaps the tabs for breadcrumbs with a Back button and lists its products.
 const NAVIGATIONS = [
   { id: 'pages', name: 'Swipe & pagination' },
   { id: 'scroll', name: 'Scroll' },
@@ -80,7 +80,7 @@ const state = {
   layout: '2x3',       // LAYOUTS id
   cardView: 'parameters', // CARD_VIEWS id
   navigation: 'pages', // NAVIGATIONS id
-  nav: { type: null, group: null }, // position in the grouped catalogue
+  nav: { group: null },  // opened group in the grouped catalogue (null = group cards under the tab)
 };
 
 const deviceEl = document.getElementById('device');
@@ -122,7 +122,7 @@ async function selectClient(client) {
   state.draft = null;
   state.screen = 'sell';
   state.page = 0;
-  state.nav = { type: null, group: null };
+  state.nav = { group: null };
   write(STORAGE.client, client.id);
   render();
   if (!client.dataFile) {
@@ -150,7 +150,7 @@ async function selectClient(client) {
 function setZone(code) {
   state.zone = code;
   state.page = 0;
-  state.nav = { type: null, group: null };
+  state.nav = { group: null };
   write(STORAGE.zone(state.client.id), code);
   const tabs = state.catalog.typesInZone(code);
   if (!tabs.some((t) => t.code === state.tab)) state.tab = tabs[0]?.code || null;
@@ -159,6 +159,7 @@ function setZone(code) {
 function setTab(code) {
   state.tab = code;
   state.page = 0;
+  state.nav.group = null;
   write(STORAGE.tab(state.client.id), code);
 }
 
@@ -219,16 +220,17 @@ function renderSell() {
     body = `<div class="sell"><div class="tabs"></div><div class="catalog"><div class="notice">Loading fare data…</div></div></div>`;
   } else {
     const tabs = state.catalog.typesInZone(state.zone);
-    let bar, catalog;
-    if (state.navigation === 'groups') {
-      ({ bar, catalog } = renderGrouped(tabs));
-    } else {
-      const offers = state.catalog.offersInZone(state.zone).filter((o) => o.typeCode === state.tab);
-      const cards = offers.map(renderCard);
-      bar = `
+    const tabsHtml = `
         <nav class="tabs" role="tablist">
           ${tabs.map((t) => `<button class="tab t-heading" role="tab" data-action="tab" data-tab="${esc(t.code)}" aria-selected="${t.code === state.tab}">${esc(t.name)}</button>`).join('')}
         </nav>`;
+    let bar, catalog;
+    if (state.navigation === 'groups') {
+      ({ bar, catalog } = renderGrouped(tabs, tabsHtml));
+    } else {
+      const offers = state.catalog.offersInZone(state.zone).filter((o) => o.typeCode === state.tab);
+      const cards = offers.map(renderCard);
+      bar = tabsHtml;
       catalog = state.navigation === 'scroll' ? renderScrolled(cards) : renderPaged(cards);
     }
     body = `<div class="sell">${bar}${catalog}</div>`;
@@ -285,36 +287,30 @@ function renderGroupCard(action, key, value, label, count) {
     </button>`;
 }
 
-function renderGrouped(types) {
-  const all = state.catalog.offersInZone(state.zone);
-  const crumbs = [{ label: 'Products', level: 0 }];
-  let cards;
-  const type = types.find((t) => t.code === state.nav.type);
-  if (!type) {
-    state.nav = { type: null, group: null };
-    cards = types.map((t) => renderGroupCard('nav-type', 'type', t.code, t.name, all.filter((o) => o.typeCode === t.code).length));
-  } else {
-    crumbs.push({ label: type.name, level: 1 });
-    const offers = all.filter((o) => o.typeCode === type.code);
-    const groups = groupsOf(type.code, offers);
-    const group = groups?.find((g) => g.label === state.nav.group);
-    if (groups && !group) {
-      state.nav.group = null;
-      cards = groups.map((g) => renderGroupCard('nav-group', 'group', g.label, g.label, g.offers.length));
-    } else {
-      if (group) crumbs.push({ label: group.label, level: 2 });
-      cards = (group ? group.offers : offers).map(renderCard);
-    }
+/** Grouped mode: the type tabs stay; under a tab the groups (periods / trip counts) are cards, and
+ *  once a group is opened the tabs give way to breadcrumbs with a Back button. */
+function renderGrouped(types, tabsHtml) {
+  const type = types.find((t) => t.code === state.tab);
+  const offers = state.catalog.offersInZone(state.zone).filter((o) => o.typeCode === state.tab);
+  const groups = groupsOf(state.tab, offers);
+  const group = groups?.find((g) => g.label === state.nav.group);
+  if (!group) {
+    state.nav.group = null;
+    const cards = groups
+      ? groups.map((g) => renderGroupCard('nav-group', 'group', g.label, g.label, g.offers.length))
+      : offers.map(renderCard);
+    return { bar: tabsHtml, catalog: renderPaged(cards) };
   }
-  const last = crumbs.length - 1;
   const bar = `
     <nav class="crumbs" aria-label="Breadcrumb">
-      <button class="crumbs__back t-heading" data-action="nav-back" aria-disabled="${last === 0}">
+      <button class="crumbs__back t-heading" data-action="nav-back">
         <svg viewBox="0 0 24 24" width="24" height="24" fill="none" aria-hidden="true"><path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Back
       </button>
-      ${crumbs.map((c, i) => `<button class="crumb t-heading" data-action="nav-level" data-level="${c.level}" aria-current="${i === last ? 'page' : 'false'}">${esc(c.label)}</button>`).join('<span class="crumbs__sep t-heading" aria-hidden="true">›</span>')}
+      <button class="crumb t-heading" data-action="nav-back" aria-current="false">${esc(type?.name || '')}</button>
+      <span class="crumbs__sep t-heading" aria-hidden="true">›</span>
+      <span class="crumb t-heading" aria-current="page">${esc(group.label)}</span>
     </nav>`;
-  return { bar, catalog: renderPaged(cards) };
+  return { bar, catalog: renderPaged(group.offers.map(renderCard)) };
 }
 
 function renderCard(offer) {
@@ -529,28 +525,14 @@ const actions = {
     write(STORAGE.navigation, state.navigation);
     afterPick();
     state.page = 0;
-    state.nav = { type: null, group: null };
+    state.nav = { group: null };
     updatePageSize();
     render();
   },
   tab(el) { setTab(el.dataset.tab); render(); },
   page(el) { goToPage(Number(el.dataset.page)); },
-  'nav-type'(el) { state.nav = { type: el.dataset.type, group: null }; state.page = 0; render(); },
   'nav-group'(el) { state.nav.group = el.dataset.group; state.page = 0; render(); },
-  'nav-level'(el) {
-    const level = Number(el.dataset.level);
-    if (level === 0) state.nav = { type: null, group: null };
-    else if (level === 1) state.nav.group = null;
-    state.page = 0;
-    render();
-  },
-  'nav-back'() {
-    if (state.nav.group) state.nav.group = null;
-    else if (state.nav.type) state.nav.type = null;
-    else return;
-    state.page = 0;
-    render();
-  },
+  'nav-back'() { state.nav.group = null; state.page = 0; render(); },
   pick(el) {
     const offer = state.catalog.offersInZone(state.zone).find((o) => o.id === el.dataset.offer);
     if (!offer) return;
