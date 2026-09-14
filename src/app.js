@@ -713,9 +713,10 @@ function applyDevice() {
   document.documentElement.dataset.device = dev.id;
 }
 
-// Page size: the chosen card layout (rows × columns), reduced on narrow screens. Cards are
-// 160px tall but shrink to 120px so the chosen rows fit; if they still don't, rows drop.
-const CARD_H = 160, CARD_H_MIN = 120, CARD_GAP = 17;
+// Page size: the chosen card layout (rows × columns), reduced on narrow screens. In paged
+// modes the cards share the available height between the chosen rows (120–240px); if even
+// 120px cards don't fit, rows drop. The scrolling list keeps the 160px design height.
+const CARD_H = 160, CARD_H_MIN = 120, CARD_H_MAX = 240, CARD_GAP = 17;
 function updatePageSize() {
   const layout = layoutOf(state.layout);
   const px = (sel, fallback) => document.querySelector(sel)?.offsetHeight || fallback;
@@ -724,7 +725,7 @@ function updatePageSize() {
   let rows = layout.rows;
   const fit = (r) => Math.floor((h - (r - 1) * CARD_GAP) / r);
   while (rows > 1 && fit(rows) < CARD_H_MIN) rows--;
-  const cardH = state.navigation === 'scroll' ? CARD_H : Math.max(CARD_H_MIN, Math.min(CARD_H, fit(rows)));
+  const cardH = state.navigation === 'scroll' ? CARD_H : Math.max(CARD_H_MIN, Math.min(CARD_H_MAX, fit(rows)));
   document.documentElement.style.setProperty('--card-cols', String(cols));
   document.documentElement.style.setProperty('--card-h', `${cardH}px`);
   const size = cols * rows;
