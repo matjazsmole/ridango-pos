@@ -51,9 +51,19 @@ const NAVIGATIONS = [
   { id: 'scroll', name: 'Scroll' },
   { id: 'groups', name: 'Groups & breadcrumbs' },
 ];
+// key: what makes two offers share a group (a duration in seconds, or a named period);
+// label: what the group card shows (the shortest label among its offers); order: sort key.
 const GROUPING = {
-  'TypeOfFareProduct@PERIOD_PASS': { key: (o) => o.period?.label || '', order: (o) => o.period?.seconds ?? Infinity },
-  'TypeOfFareProduct@MULTI_TRIP': { key: (o) => o.trips?.label || '', order: (o) => o.trips?.count ?? Infinity },
+  'TypeOfFareProduct@PERIOD_PASS': {
+    key: (o) => (o.period ? (Number.isFinite(o.period.seconds) ? `t:${o.period.seconds}` : `n:${o.period.label}`) : ''),
+    label: (o) => o.period?.label || '',
+    order: (o) => o.period?.seconds ?? Infinity,
+  },
+  'TypeOfFareProduct@MULTI_TRIP': {
+    key: (o) => (o.trips ? (o.trips.count ? `c:${o.trips.count}` : `n:${o.trips.label}`) : ''),
+    label: (o) => o.trips?.label || '',
+    order: (o) => o.trips?.count ?? Infinity,
+  },
 };
 const deviceOf = (id) => DEVICES.find((d) => d.id === id) || DEVICES[0];
 const layoutOf = (id) => LAYOUTS.find((l) => l.id === id) || LAYOUTS[0];
@@ -271,9 +281,12 @@ function groupsOf(typeCode, offers) {
   if (!rule) return null;
   const map = new Map();
   for (const o of offers) {
-    const label = rule.key(o) || 'Other';
-    if (!map.has(label)) map.set(label, { label, order: rule.key(o) ? rule.order(o) : Infinity, offers: [] });
-    map.get(label).offers.push(o);
+    const key = rule.key(o) || 'other';
+    if (!map.has(key)) map.set(key, { key, label: rule.key(o) ? rule.label(o) : 'Other', order: rule.key(o) ? rule.order(o) : Infinity, offers: [] });
+    const g = map.get(key);
+    g.offers.push(o);
+    const label = rule.label(o);
+    if (label && label.length < g.label.length) g.label = label;
   }
   if (map.size <= 1) return null;
   return [...map.values()].sort((a, b) => a.order - b.order || a.label.localeCompare(b.label, 'sv'));
@@ -293,11 +306,11 @@ function renderGrouped(types, tabsHtml) {
   const type = types.find((t) => t.code === state.tab);
   const offers = state.catalog.offersInZone(state.zone).filter((o) => o.typeCode === state.tab);
   const groups = groupsOf(state.tab, offers);
-  const group = groups?.find((g) => g.label === state.nav.group);
+  const group = groups?.find((g) => g.key === state.nav.group);
   if (!group) {
     state.nav.group = null;
     const cards = groups
-      ? groups.map((g) => renderGroupCard('nav-group', 'group', g.label, g.label, g.offers.length))
+      ? groups.map((g) => renderGroupCard('nav-group', 'group', g.key, g.label, g.offers.length))
       : offers.map(renderCard);
     return { bar: tabsHtml, catalog: renderPaged(cards) };
   }

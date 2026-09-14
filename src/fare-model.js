@@ -72,6 +72,14 @@ function isoSeconds(value) {
   return (Number(m[1]) || 0) * 86400 + (Number(m[2]) || 0) * 3600 + (Number(m[3]) || 0) * 60 + (Number(m[4]) || 0);
 }
 
+/** Human label for a duration in seconds: "30 days", "24 h", "90 min". */
+export function durationLabel(seconds) {
+  if (!Number.isFinite(seconds) || seconds <= 0) return '';
+  if (seconds % 86400 === 0 && seconds >= 2 * 86400) return `${seconds / 86400} days`;
+  if (seconds % 3600 === 0) return `${seconds / 3600} h`;
+  return `${Math.round(seconds / 60)} min`;
+}
+
 /** Simple slug for CSS hooks: "UserProfile@1" + "Adult" → "adult". */
 function slug(value) {
   return String(value || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -155,6 +163,10 @@ export function buildCatalog(fullset, options = {}) {
         const fse = get(fseRef);
         if (!fse) continue;
         for (const ti of fse.timeIntervals || []) timeIntervals.push(baseCode(ti?.code || ti));
+        for (const tsf of fse.timeStructureFactors || []) {
+          const factor = get(tsf?.code ? tsf.code : tsf) || tsf;
+          if (factor?.timeInterval) timeIntervals.push(baseCode(factor.timeInterval?.code || factor.timeInterval));
+        }
         for (const vpaRef of fse.validityParameterAssignments || []) {
           const vpa = get(vpaRef?.code ? vpaRef.code : vpaRef) || vpaRef;
           for (const lim of vpa?.limitations || []) {
@@ -176,12 +188,13 @@ export function buildCatalog(fullset, options = {}) {
     // Validity period of the product: the first fixed-length time interval, else a named
     // fixed period (e.g. "Summer 2026"), which sorts after every fixed-length interval.
     const interval = [...new Set(timeIntervals)].map(get).find((t) => t && (t.duration || t.period));
+    const seconds = interval ? isoSeconds(interval.duration || interval.period) : null;
     const period = interval
-      ? { label: name(interval).trim(), seconds: isoSeconds(interval.duration || interval.period) ?? Infinity }
+      ? { label: name(interval).trim() || durationLabel(seconds), seconds: seconds ?? Infinity }
       : temporalNames[0] ? { label: temporalNames[0], seconds: Infinity } : null;
     // Number of trips (activations) a multi-trip product holds; the activation's name when
     // it is not a plain count (e.g. "4 trips per day").
-    const trips = activation
+    const trips = activation && activation.max !== 1
       ? { count: activation.max, label: activation.max > 1 ? `${activation.max} trips` : activation.name }
       : null;
     return {

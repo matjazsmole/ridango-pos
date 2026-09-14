@@ -247,7 +247,7 @@ body[data-device-frame] .device { flex: none; box-shadow: 0 0 0 1px rgba(255, 25
   white-space: nowrap;
 }
 .chip[data-profile="adult"] { background: var(--chip-adult); }
-.chip[data-profile="youth"] { background: var(--chip-youth); }
+.chip[data-profile="youth"], .chip[data-profile="youth-student"] { background: var(--chip-youth); }
 .chip[data-profile="senior"] { background: var(--chip-senior); }
 .chip[data-profile="student"] { background: var(--chip-student); }
 .chip[data-profile="family"] { background: var(--chip-family); }

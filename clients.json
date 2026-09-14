@@ -17,8 +17,8 @@
       "environment": "test",
       "logo": "assets/logos/sormland.svg",
       "logoHeight": 42,
-      "dataFile": null,
-      "distributionChannel": null,
+      "dataFile": "data/sormland-test/sormland-v27-fullset.json",
+      "distributionChannel": "DistributionChannel@14",
       "locale": "sv-SE",
       "language": "sv"
     }
