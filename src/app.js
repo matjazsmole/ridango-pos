@@ -11,6 +11,7 @@ const STORAGE = {
   device: 'ridango-pos.device',
   layout: 'ridango-pos.layout',
   cardView: 'ridango-pos.card-view',
+  navigation: 'ridango-pos.navigation',
   zone: (clientId) => `ridango-pos.zone.${clientId}`,
   tab: (clientId) => `ridango-pos.tab.${clientId}`,
 };
@@ -40,9 +41,16 @@ const CARD_VIEWS = [
   { id: 'parameters', name: 'Parameters' },
   { id: 'derived', name: 'Derived products' },
 ];
+// Navigation: 'pages' splits the catalogue into swipeable pages of rows × columns cards;
+// 'scroll' shows every product of the tab in one vertically scrolling grid.
+const NAVIGATIONS = [
+  { id: 'pages', name: 'Swipe & pagination' },
+  { id: 'scroll', name: 'Scroll' },
+];
 const deviceOf = (id) => DEVICES.find((d) => d.id === id) || DEVICES[0];
 const layoutOf = (id) => LAYOUTS.find((l) => l.id === id) || LAYOUTS[0];
 const cardViewOf = (id) => CARD_VIEWS.find((v) => v.id === id) || CARD_VIEWS[0];
+const navigationOf = (id) => NAVIGATIONS.find((n) => n.id === id) || NAVIGATIONS[0];
 
 const state = {
   clients: [],
@@ -58,11 +66,12 @@ const state = {
   cart: [],            // [{ offer, zoneCode, zoneName, quantity, price }]
   separateTickets: true,
   printReceipt: false,
-  modal: null,         // 'settings' | 'zone' | 'client' | 'device' | 'layout' | 'card-view' | 'menu' | 'success'
+  modal: null,         // 'settings' | 'zone' | 'client' | 'device' | 'layout' | 'card-view' | 'navigation' | 'menu' | 'success'
   modalReturn: null,   // modal to reopen after a pick (settings sub-lists)
   device: 'auto',      // DEVICES id
   layout: '2x3',       // LAYOUTS id
   cardView: 'parameters', // CARD_VIEWS id
+  navigation: 'pages', // NAVIGATIONS id
 };
 
 const deviceEl = document.getElementById('device');
@@ -200,17 +209,21 @@ function renderSell() {
   } else {
     const tabs = state.catalog.typesInZone(state.zone);
     const offers = state.catalog.offersInZone(state.zone).filter((o) => o.typeCode === state.tab);
-    const pages = Math.max(1, Math.ceil(offers.length / state.pageSize));
-    state.page = Math.min(state.page, pages - 1);
-    const pageHtml = Array.from({ length: pages }, (_, i) => {
-      const slice = offers.slice(i * state.pageSize, (i + 1) * state.pageSize);
-      return `<div class="cards" aria-hidden="${i !== state.page}">${slice.length ? slice.map(renderCard).join('') : '<p class="empty t-display-s">No products for this zone.</p>'}</div>`;
-    }).join('');
-    body = `
-      <div class="sell">
-        <nav class="tabs" role="tablist">
-          ${tabs.map((t) => `<button class="tab t-heading" role="tab" data-action="tab" data-tab="${esc(t.code)}" aria-selected="${t.code === state.tab}">${esc(t.name)}</button>`).join('')}
-        </nav>
+    const empty = '<p class="empty t-display-s">No products for this zone.</p>';
+    let catalog;
+    if (state.navigation === 'scroll') {
+      catalog = `
+        <section class="catalog catalog--scroll">
+          <div class="cards">${offers.length ? offers.map(renderCard).join('') : empty}</div>
+        </section>`;
+    } else {
+      const pages = Math.max(1, Math.ceil(offers.length / state.pageSize));
+      state.page = Math.min(state.page, pages - 1);
+      const pageHtml = Array.from({ length: pages }, (_, i) => {
+        const slice = offers.slice(i * state.pageSize, (i + 1) * state.pageSize);
+        return `<div class="cards" aria-hidden="${i !== state.page}">${slice.length ? slice.map(renderCard).join('') : empty}</div>`;
+      }).join('');
+      catalog = `
         <section class="catalog">
           <div class="catalog__pages">
             <div class="track" data-swipe style="transform:translate3d(${-state.page * 100}%,0,0)">${pageHtml}</div>
@@ -218,7 +231,14 @@ function renderSell() {
           <div class="pager" role="tablist" aria-label="Pages">
             ${pages > 1 ? Array.from({ length: pages }, (_, i) => `<button class="pager__dot" data-action="page" data-page="${i}" aria-current="${i === state.page}" aria-label="Page ${i + 1}"></button>`).join('') : ''}
           </div>
-        </section>
+        </section>`;
+    }
+    body = `
+      <div class="sell">
+        <nav class="tabs" role="tablist">
+          ${tabs.map((t) => `<button class="tab t-heading" role="tab" data-action="tab" data-tab="${esc(t.code)}" aria-selected="${t.code === state.tab}">${esc(t.name)}</button>`).join('')}
+        </nav>
+        ${catalog}
       </div>`;
   }
   return `<div class="screen">${renderHeader({ title: 'Sell ticket' })}${body}${renderFooter()}</div>`;
@@ -353,6 +373,7 @@ function renderModal() {
         option('device', 'open', '', 'Device', deviceOf(state.device).name, false),
         option('layout', 'open', '', 'Card layout', layoutOf(state.layout).name, false),
         option('card-view', 'open', '', 'Card view', cardViewOf(state.cardView).name, false),
+        option('navigation', 'open', '', 'Navigation', navigationOf(state.navigation).name, false),
       ],
     },
     zone: { title: 'Select zone', rows: (state.catalog?.zones || []).map((z) => option('set-zone', 'zone', z.code, z.name, '', z.code === state.zone)) },
@@ -360,6 +381,7 @@ function renderModal() {
     device: { title: 'Select device', rows: DEVICES.map((d) => option('set-device', 'device', d.id, d.name, d.meta, d.id === state.device)) },
     layout: { title: 'Card layout', rows: LAYOUTS.map((l) => option('set-layout', 'layout', l.id, l.name, '', l.id === state.layout)) },
     'card-view': { title: 'Card view', rows: CARD_VIEWS.map((v) => option('set-card-view', 'view', v.id, v.name, '', v.id === state.cardView)) },
+    navigation: { title: 'Navigation', rows: NAVIGATIONS.map((n) => option('set-navigation', 'navigation', n.id, n.name, '', n.id === state.navigation)) },
   };
   const { title, rows } = lists[state.modal] || lists.settings;
   modals.innerHTML = `
@@ -396,6 +418,7 @@ const actions = {
   device() { openModal('device'); },
   layout() { openModal('layout'); },
   'card-view'() { openModal('card-view'); },
+  navigation() { openModal('navigation'); },
   zone() { if (state.catalog) openModal('zone'); },
   menu() { state.modal = state.modal === 'menu' ? null : 'menu'; renderModal(); },
   close() { state.modal = null; state.modalReturn = null; renderModal(); },
@@ -426,6 +449,14 @@ const actions = {
     state.cardView = cardViewOf(el.dataset.view).id;
     write(STORAGE.cardView, state.cardView);
     afterPick();
+    render();
+  },
+  'set-navigation'(el) {
+    state.navigation = navigationOf(el.dataset.navigation).id;
+    write(STORAGE.navigation, state.navigation);
+    afterPick();
+    state.page = 0;
+    updatePageSize();
     render();
   },
   tab(el) { setTab(el.dataset.tab); render(); },
@@ -608,7 +639,7 @@ function updatePageSize() {
   let rows = layout.rows;
   const fit = (r) => Math.floor((h - (r - 1) * CARD_GAP) / r);
   while (rows > 1 && fit(rows) < CARD_H_MIN) rows--;
-  const cardH = Math.max(CARD_H_MIN, Math.min(CARD_H, fit(rows)));
+  const cardH = state.navigation === 'scroll' ? CARD_H : Math.max(CARD_H_MIN, Math.min(CARD_H, fit(rows)));
   document.documentElement.style.setProperty('--card-cols', String(cols));
   document.documentElement.style.setProperty('--card-h', `${cardH}px`);
   const size = cols * rows;
@@ -629,6 +660,7 @@ setInterval(updateClock, 15000);
   state.device = deviceOf(read(STORAGE.device)).id;
   state.layout = layoutOf(read(STORAGE.layout)).id;
   state.cardView = cardViewOf(read(STORAGE.cardView)).id;
+  state.navigation = navigationOf(read(STORAGE.navigation)).id;
   applyDevice();
   updatePageSize();
   try {
