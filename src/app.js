@@ -43,10 +43,18 @@ const CARD_VIEWS = [
 ];
 // Navigation: 'pages' splits the catalogue into swipeable pages of rows × columns cards;
 // 'scroll' shows every product of the tab in one vertically scrolling grid.
+// 'groups' replaces the tabs with breadcrumbs: product types first, then (where a type has more
+// than one group) period passes grouped by validity period and multi-trip tickets by number of
+// trips, then the products.
 const NAVIGATIONS = [
   { id: 'pages', name: 'Swipe & pagination' },
   { id: 'scroll', name: 'Scroll' },
+  { id: 'groups', name: 'Groups & breadcrumbs' },
 ];
+const GROUPING = {
+  'TypeOfFareProduct@PERIOD_PASS': { key: (o) => o.period?.label || '', order: (o) => o.period?.seconds ?? Infinity },
+  'TypeOfFareProduct@MULTI_TRIP': { key: (o) => o.trips?.label || '', order: (o) => o.trips?.count ?? Infinity },
+};
 const deviceOf = (id) => DEVICES.find((d) => d.id === id) || DEVICES[0];
 const layoutOf = (id) => LAYOUTS.find((l) => l.id === id) || LAYOUTS[0];
 const cardViewOf = (id) => CARD_VIEWS.find((v) => v.id === id) || CARD_VIEWS[0];
@@ -72,6 +80,7 @@ const state = {
   layout: '2x3',       // LAYOUTS id
   cardView: 'parameters', // CARD_VIEWS id
   navigation: 'pages', // NAVIGATIONS id
+  nav: { type: null, group: null }, // position in the grouped catalogue
 };
 
 const deviceEl = document.getElementById('device');
@@ -113,6 +122,7 @@ async function selectClient(client) {
   state.draft = null;
   state.screen = 'sell';
   state.page = 0;
+  state.nav = { type: null, group: null };
   write(STORAGE.client, client.id);
   render();
   if (!client.dataFile) {
@@ -140,6 +150,7 @@ async function selectClient(client) {
 function setZone(code) {
   state.zone = code;
   state.page = 0;
+  state.nav = { type: null, group: null };
   write(STORAGE.zone(state.client.id), code);
   const tabs = state.catalog.typesInZone(code);
   if (!tabs.some((t) => t.code === state.tab)) state.tab = tabs[0]?.code || null;
@@ -208,40 +219,102 @@ function renderSell() {
     body = `<div class="sell"><div class="tabs"></div><div class="catalog"><div class="notice">Loading fare data…</div></div></div>`;
   } else {
     const tabs = state.catalog.typesInZone(state.zone);
-    const offers = state.catalog.offersInZone(state.zone).filter((o) => o.typeCode === state.tab);
-    const empty = '<p class="empty t-display-s">No products for this zone.</p>';
-    let catalog;
-    if (state.navigation === 'scroll') {
-      catalog = `
-        <section class="catalog catalog--scroll">
-          <div class="cards">${offers.length ? offers.map(renderCard).join('') : empty}</div>
-        </section>`;
+    let bar, catalog;
+    if (state.navigation === 'groups') {
+      ({ bar, catalog } = renderGrouped(tabs));
     } else {
-      const pages = Math.max(1, Math.ceil(offers.length / state.pageSize));
-      state.page = Math.min(state.page, pages - 1);
-      const pageHtml = Array.from({ length: pages }, (_, i) => {
-        const slice = offers.slice(i * state.pageSize, (i + 1) * state.pageSize);
-        return `<div class="cards" aria-hidden="${i !== state.page}">${slice.length ? slice.map(renderCard).join('') : empty}</div>`;
-      }).join('');
-      catalog = `
-        <section class="catalog">
-          <div class="catalog__pages">
-            <div class="track" data-swipe style="transform:translate3d(${-state.page * 100}%,0,0)">${pageHtml}</div>
-          </div>
-          <div class="pager" role="tablist" aria-label="Pages">
-            ${pages > 1 ? Array.from({ length: pages }, (_, i) => `<button class="pager__dot" data-action="page" data-page="${i}" aria-current="${i === state.page}" aria-label="Page ${i + 1}"></button>`).join('') : ''}
-          </div>
-        </section>`;
-    }
-    body = `
-      <div class="sell">
+      const offers = state.catalog.offersInZone(state.zone).filter((o) => o.typeCode === state.tab);
+      const cards = offers.map(renderCard);
+      bar = `
         <nav class="tabs" role="tablist">
           ${tabs.map((t) => `<button class="tab t-heading" role="tab" data-action="tab" data-tab="${esc(t.code)}" aria-selected="${t.code === state.tab}">${esc(t.name)}</button>`).join('')}
-        </nav>
-        ${catalog}
-      </div>`;
+        </nav>`;
+      catalog = state.navigation === 'scroll' ? renderScrolled(cards) : renderPaged(cards);
+    }
+    body = `<div class="sell">${bar}${catalog}</div>`;
   }
   return `<div class="screen">${renderHeader({ title: 'Sell ticket' })}${body}${renderFooter()}</div>`;
+}
+
+const EMPTY = '<p class="empty t-display-s">No products for this zone.</p>';
+
+function renderScrolled(cards) {
+  return `
+    <section class="catalog catalog--scroll">
+      <div class="cards">${cards.length ? cards.join('') : EMPTY}</div>
+    </section>`;
+}
+
+function renderPaged(cards) {
+  const pages = Math.max(1, Math.ceil(cards.length / state.pageSize));
+  state.page = Math.min(state.page, pages - 1);
+  const pageHtml = Array.from({ length: pages }, (_, i) => {
+    const slice = cards.slice(i * state.pageSize, (i + 1) * state.pageSize);
+    return `<div class="cards" aria-hidden="${i !== state.page}">${slice.length ? slice.join('') : EMPTY}</div>`;
+  }).join('');
+  return `
+    <section class="catalog">
+      <div class="catalog__pages">
+        <div class="track" data-swipe style="transform:translate3d(${-state.page * 100}%,0,0)">${pageHtml}</div>
+      </div>
+      <div class="pager" role="tablist" aria-label="Pages">
+        ${pages > 1 ? Array.from({ length: pages }, (_, i) => `<button class="pager__dot" data-action="page" data-page="${i}" aria-current="${i === state.page}" aria-label="Page ${i + 1}"></button>`).join('') : ''}
+      </div>
+    </section>`;
+}
+
+/** Groups of a product type's offers (period passes by validity period, multi-trip by trips); null when the type has at most one group. */
+function groupsOf(typeCode, offers) {
+  const rule = GROUPING[typeCode];
+  if (!rule) return null;
+  const map = new Map();
+  for (const o of offers) {
+    const label = rule.key(o) || 'Other';
+    if (!map.has(label)) map.set(label, { label, order: rule.key(o) ? rule.order(o) : Infinity, offers: [] });
+    map.get(label).offers.push(o);
+  }
+  if (map.size <= 1) return null;
+  return [...map.values()].sort((a, b) => a.order - b.order || a.label.localeCompare(b.label, 'sv'));
+}
+
+function renderGroupCard(action, key, value, label, count) {
+  return `
+    <button class="card card--group" data-action="${action}" data-${key}="${esc(value)}">
+      <div class="card__name t-display-s">${esc(label)}</div>
+      <div class="card__zone t-heading">${count} ${count === 1 ? 'product' : 'products'}</div>
+    </button>`;
+}
+
+function renderGrouped(types) {
+  const all = state.catalog.offersInZone(state.zone);
+  const crumbs = [{ label: 'Products', level: 0 }];
+  let cards;
+  const type = types.find((t) => t.code === state.nav.type);
+  if (!type) {
+    state.nav = { type: null, group: null };
+    cards = types.map((t) => renderGroupCard('nav-type', 'type', t.code, t.name, all.filter((o) => o.typeCode === t.code).length));
+  } else {
+    crumbs.push({ label: type.name, level: 1 });
+    const offers = all.filter((o) => o.typeCode === type.code);
+    const groups = groupsOf(type.code, offers);
+    const group = groups?.find((g) => g.label === state.nav.group);
+    if (groups && !group) {
+      state.nav.group = null;
+      cards = groups.map((g) => renderGroupCard('nav-group', 'group', g.label, g.label, g.offers.length));
+    } else {
+      if (group) crumbs.push({ label: group.label, level: 2 });
+      cards = (group ? group.offers : offers).map(renderCard);
+    }
+  }
+  const last = crumbs.length - 1;
+  const bar = `
+    <nav class="crumbs" aria-label="Breadcrumb">
+      <button class="crumbs__back t-heading" data-action="nav-back" aria-disabled="${last === 0}">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" aria-hidden="true"><path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Back
+      </button>
+      ${crumbs.map((c, i) => `<button class="crumb t-heading" data-action="nav-level" data-level="${c.level}" aria-current="${i === last ? 'page' : 'false'}">${esc(c.label)}</button>`).join('<span class="crumbs__sep t-heading" aria-hidden="true">›</span>')}
+    </nav>`;
+  return { bar, catalog: renderPaged(cards) };
 }
 
 function renderCard(offer) {
@@ -456,11 +529,28 @@ const actions = {
     write(STORAGE.navigation, state.navigation);
     afterPick();
     state.page = 0;
+    state.nav = { type: null, group: null };
     updatePageSize();
     render();
   },
   tab(el) { setTab(el.dataset.tab); render(); },
   page(el) { goToPage(Number(el.dataset.page)); },
+  'nav-type'(el) { state.nav = { type: el.dataset.type, group: null }; state.page = 0; render(); },
+  'nav-group'(el) { state.nav.group = el.dataset.group; state.page = 0; render(); },
+  'nav-level'(el) {
+    const level = Number(el.dataset.level);
+    if (level === 0) state.nav = { type: null, group: null };
+    else if (level === 1) state.nav.group = null;
+    state.page = 0;
+    render();
+  },
+  'nav-back'() {
+    if (state.nav.group) state.nav.group = null;
+    else if (state.nav.type) state.nav.type = null;
+    else return;
+    state.page = 0;
+    render();
+  },
   pick(el) {
     const offer = state.catalog.offersInZone(state.zone).find((o) => o.id === el.dataset.offer);
     if (!offer) return;
@@ -634,7 +724,7 @@ const CARD_H = 160, CARD_H_MIN = 120, CARD_GAP = 17;
 function updatePageSize() {
   const layout = layoutOf(state.layout);
   const px = (sel, fallback) => document.querySelector(sel)?.offsetHeight || fallback;
-  const h = app.clientHeight - px('.header', 80) - px('.tabs', 72) - px('.footer', 50) - 28 - 24; // top padding + pager
+  const h = app.clientHeight - px('.header', 80) - px('.tabs, .crumbs', 72) - px('.footer', 50) - 28 - 24; // top padding + pager
   const cols = matchMedia('(max-width: 520px)').matches ? 1 : matchMedia('(max-width: 760px)').matches ? 2 : layout.cols;
   let rows = layout.rows;
   const fit = (r) => Math.floor((h - (r - 1) * CARD_GAP) / r);

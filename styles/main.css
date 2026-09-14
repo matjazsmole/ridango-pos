@@ -169,6 +169,28 @@ body[data-device-frame] .device { flex: none; box-shadow: 0 0 0 1px rgba(255, 25
 }
 .tab[aria-selected="true"] { color: var(--black); border-bottom-color: var(--accent); }
 
+/* ---------- Breadcrumbs (grouped navigation) ---------- */
+.crumbs {
+  height: var(--tabs-h);
+  background: var(--white);
+  display: flex; align-items: center; gap: 8px;
+  padding: 0 24px;
+  overflow: hidden; white-space: nowrap;
+}
+.crumbs__back {
+  flex: none;
+  display: flex; align-items: center; gap: 2px;
+  height: 48px; padding: 0 12px 0 4px; margin-right: 8px;
+  border-radius: var(--radius);
+  color: var(--black);
+}
+.crumbs__back:active { background: var(--gray-5); }
+.crumbs__back[aria-disabled="true"] { visibility: hidden; }
+.crumb { flex: none; height: 48px; padding: 0 4px; color: var(--gray-60); text-transform: uppercase; }
+.crumb[aria-current="page"] { color: var(--black); }
+.crumbs__sep { color: var(--gray-40); }
+.card--group { justify-content: center; gap: 4px; }
+
 /* ---------- Sell screen ---------- */
 .sell { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: var(--tabs-h) 1fr; min-height: 0; min-width: 0; }
 .catalog { position: relative; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
@@ -405,6 +427,7 @@ body[data-device-frame] .device { flex: none; box-shadow: 0 0 0 1px rgba(255, 25
   .catalog__pages { margin: 0 16px; }
   .catalog--scroll { padding: 28px 16px 16px; }
   .tabs { padding: 0 16px; gap: 20px; }
+  .crumbs { padding: 0 16px; }
   .cards { grid-template-columns: minmax(0, 1fr); }
   .detail { padding: 0 16px 16px; }
   .kv { padding-top: 24px; }

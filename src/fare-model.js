@@ -65,6 +65,13 @@ function sortOrderOf(entity) {
   return Number.isFinite(n) ? n : 999;
 }
 
+/** Seconds in an ISO-8601 duration such as PT24H, P30D or PT2H30M (null when unparseable). */
+function isoSeconds(value) {
+  const m = /^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/.exec(String(value || ''));
+  if (!m) return null;
+  return (Number(m[1]) || 0) * 86400 + (Number(m[2]) || 0) * 3600 + (Number(m[3]) || 0) * 60 + (Number(m[4]) || 0);
+}
+
 /** Simple slug for CSS hooks: "UserProfile@1" + "Adult" → "adult". */
 function slug(value) {
   return String(value || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -140,29 +147,49 @@ export function buildCatalog(fullset, options = {}) {
     const profileCodes = [];
     const zoneRefs = [];
     const timeIntervals = [];
+    const temporalNames = [];
+    let activation = null;
     for (const ve of product.validableElements || []) {
       const validable = get(ve?.code ? ve.code : ve) || ve;
       for (const fseRef of validable?.fareStructureElements || []) {
         const fse = get(fseRef);
         if (!fse) continue;
-        for (const ti of fse.timeIntervals || []) timeIntervals.push(baseCode(ti));
+        for (const ti of fse.timeIntervals || []) timeIntervals.push(baseCode(ti?.code || ti));
         for (const vpaRef of fse.validityParameterAssignments || []) {
           const vpa = get(vpaRef?.code ? vpaRef.code : vpaRef) || vpaRef;
           for (const lim of vpa?.limitations || []) {
             const code = baseCode(lim?.code || lim);
             if (classOf(code) === 'UserProfile') profileCodes.push(code);
+            if (classOf(code) === 'Activation' && !activation) {
+              const a = get(code);
+              activation = { max: Number(a?.maxNumberOfActivations) || null, name: name(a).trim() };
+            }
           }
           for (const vp of vpa?.validityParameters || []) {
             const nvp = get(vp);
             for (const tz of nvp?.tariffZones || []) zoneRefs.push(baseCode(tz));
+            if (classOf(baseCode(vp?.code || vp)) === 'TemporalValidityParameter') temporalNames.push(name(nvp).trim());
           }
         }
       }
     }
+    // Validity period of the product: the first fixed-length time interval, else a named
+    // fixed period (e.g. "Summer 2026"), which sorts after every fixed-length interval.
+    const interval = [...new Set(timeIntervals)].map(get).find((t) => t && (t.duration || t.period));
+    const period = interval
+      ? { label: name(interval).trim(), seconds: isoSeconds(interval.duration || interval.period) ?? Infinity }
+      : temporalNames[0] ? { label: temporalNames[0], seconds: Infinity } : null;
+    // Number of trips (activations) a multi-trip product holds; the activation's name when
+    // it is not a plain count (e.g. "4 trips per day").
+    const trips = activation
+      ? { count: activation.max, label: activation.max > 1 ? `${activation.max} trips` : activation.name }
+      : null;
     return {
       profiles: [...new Set(profileCodes)].map((c) => profiles.get(c)).filter(Boolean).sort((a, b) => a.sortOrder - b.sortOrder),
       zoneRefs: [...new Set(zoneRefs)],
       timeIntervals: [...new Set(timeIntervals)],
+      period,
+      trips,
     };
   };
 
@@ -216,6 +243,8 @@ export function buildCatalog(fullset, options = {}) {
           title,
           profile,
           categoryOrder,
+          period: structure.period,   // { label, seconds } | null
+          trips: structure.trips,     // { count, label } | null
           zoneRefs: structure.zoneRefs,
           hasPrices: cells.length > 0,
           priceIn: (zoneCode) => priceFor(product, cells, profile?.code, zoneCode),
