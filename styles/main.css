@@ -189,13 +189,13 @@ body[data-device-frame] .device { flex: none; box-shadow: 0 0 0 1px rgba(255, 25
 .cards {
   display: grid;
   grid-template-columns: repeat(var(--card-cols, 3), minmax(0, 1fr));
-  grid-auto-rows: 160px;
+  grid-auto-rows: var(--card-h, 160px);
   gap: 17px 16px;
 }
 .card {
   display: flex; flex-direction: column; justify-content: center; gap: 8px;
   width: 100%; min-width: 0;
-  height: 160px; min-height: 120px;
+  height: var(--card-h, 160px); min-height: 120px;
   padding: 14px 15px;
   background: var(--white);
   border: 1px solid var(--gray-20);

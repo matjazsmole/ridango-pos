@@ -30,6 +30,9 @@ const LAYOUTS = [
   { id: '2x3', name: '2 rows × 3 cards', rows: 2, cols: 3 },
   { id: '2x2', name: '2 rows × 2 cards', rows: 2, cols: 2 },
   { id: '2x4', name: '2 rows × 4 cards', rows: 2, cols: 4 },
+  { id: '3x2', name: '3 rows × 2 cards', rows: 3, cols: 2 },
+  { id: '3x3', name: '3 rows × 3 cards', rows: 3, cols: 3 },
+  { id: '3x4', name: '3 rows × 4 cards', rows: 3, cols: 4 },
 ];
 // Card view: 'parameters' shows product, zone and user profile as separate parameters;
 // 'derived' shows one derived product name, e.g. "Single ticket - Arboga (ADULT)", and the price.
@@ -594,14 +597,20 @@ function applyDevice() {
   document.documentElement.dataset.device = dev.id;
 }
 
-// Page size: the chosen card layout (rows × columns), reduced on narrow or short screens.
+// Page size: the chosen card layout (rows × columns), reduced on narrow screens. Cards are
+// 160px tall but shrink to 120px so the chosen rows fit; if they still don't, rows drop.
+const CARD_H = 160, CARD_H_MIN = 120, CARD_GAP = 17;
 function updatePageSize() {
   const layout = layoutOf(state.layout);
   const px = (sel, fallback) => document.querySelector(sel)?.offsetHeight || fallback;
   const h = app.clientHeight - px('.header', 80) - px('.tabs', 72) - px('.footer', 50) - 28 - 24; // top padding + pager
   const cols = matchMedia('(max-width: 520px)').matches ? 1 : matchMedia('(max-width: 760px)').matches ? 2 : layout.cols;
-  const rows = Math.max(1, Math.min(layout.rows, Math.floor((h + 17) / 177)));
+  let rows = layout.rows;
+  const fit = (r) => Math.floor((h - (r - 1) * CARD_GAP) / r);
+  while (rows > 1 && fit(rows) < CARD_H_MIN) rows--;
+  const cardH = Math.max(CARD_H_MIN, Math.min(CARD_H, fit(rows)));
   document.documentElement.style.setProperty('--card-cols', String(cols));
+  document.documentElement.style.setProperty('--card-h', `${cardH}px`);
   const size = cols * rows;
   if (size !== state.pageSize) { state.pageSize = size; state.page = 0; if (state.catalog) render(); }
 }
